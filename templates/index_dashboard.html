@@ -1,0 +1,1487 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SDN Network Dashboard</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <!-- Font Awesome for Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+    <!-- Chart.js for graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <!-- Chart.js adapter for date-fns (for time-series charts) -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <!-- Socket.IO Client -->
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
+    <style>
+        /* Custom CSS from the user's provided HTML */
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --success-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --warning-gradient: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            --danger-gradient: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            --dark-bg: #0f1419;
+            --card-bg: rgba(255, 255, 255, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.8);
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            --glow: 0 0 20px rgba(102, 126, 234, 0.4);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--dark-bg);
+            background-image:
+                radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.2) 0%, transparent 50%);
+            min-height: 100vh;
+            color: var(--text-primary);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow-x: hidden; /* Prevent horizontal scroll from particles */
+        }
+
+        .main-title {
+            font-size: 3.5rem;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 3rem;
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px rgba(102, 126, 234, 0.5);
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes glow {
+            from { filter: drop-shadow(0 0 10px rgba(102, 126, 234, 0.5)); }
+            to { filter: drop-shadow(0 0 20px rgba(102, 126, 234, 0.8)); }
+        }
+
+        .modern-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            box-shadow: var(--shadow);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .modern-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--primary-gradient);
+            transform: scaleX(0);
+            transition: transform 0.4s ease;
+        }
+
+        .modern-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .modern-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .card-header-modern {
+            background: transparent;
+            border: none;
+            padding: 1.5rem;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .card-header-modern i {
+            font-size: 1.6rem;
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .metric-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 4px;
+            background: var(--success-gradient);
+            transform: scaleY(0);
+            transition: transform 0.3s ease;
+        }
+
+        .metric-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(5px);
+        }
+
+        .metric-item:hover::before {
+            transform: scaleY(1);
+        }
+
+        .metric-label {
+            font-weight: 600;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: var(--success-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .topology-node {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.25rem;
+            margin: 0.5rem 0.5rem 0.5rem 0;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+
+        .topology-node::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .topology-node:hover::before {
+            left: 100%;
+        }
+
+        .switch-node {
+            background: rgba(255, 193, 7, 0.2);
+            border: 2px solid #ffc107;
+            color: #ffc107;
+            box-shadow: 0 0 15px rgba(255, 193, 7, 0.3);
+        }
+
+        .switch-node:hover {
+            background: rgba(255, 193, 7, 0.3);
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(255, 193, 7, 0.5);
+        }
+
+        .server-node {
+            background: rgba(25, 135, 84, 0.2);
+            border: 2px solid #198754;
+            color: #198754;
+            box-shadow: 0 0 15px rgba(25, 135, 84, 0.3);
+        }
+
+        .server-node:hover {
+            background: rgba(25, 135, 84, 0.3);
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(25, 135, 84, 0.5);
+        }
+
+        .client-node {
+            background: rgba(220, 53, 69, 0.2);
+            border: 2px solid #dc3545;
+            color: #dc3545;
+            box-shadow: 0 0 15px rgba(220, 53, 69, 0.3);
+        }
+
+        .client-node:hover {
+            background: rgba(220, 53, 69, 0.3);
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(220, 53, 69, 0.5);
+        }
+
+        .connection-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .connection-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(10px);
+        }
+
+        .connection-line {
+            flex: 1;
+            height: 2px;
+            background: var(--primary-gradient);
+            border-radius: 1px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .connection-line::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
+            animation: flow 2s linear infinite;
+        }
+
+        @keyframes flow {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .flow-entry, .port-entry {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .flow-entry::before, .port-entry::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: var(--warning-gradient);
+        }
+
+        .flow-entry:hover, .port-entry:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: scale(1.02);
+        }
+
+        .flow-entry strong, .port-entry strong {
+            color: #4facfe;
+            font-weight: 700;
+        }
+
+        .dpid-status {
+            font-weight: 700;
+            background: var(--secondary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--success-gradient);
+            animation: blink 2s infinite;
+            box-shadow: 0 0 10px rgba(75, 172, 254, 0.5);
+        }
+
+        .status-indicator.red {
+            background: var(--danger-gradient);
+            box-shadow: 0 0 10px rgba(250, 112, 154, 0.5);
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .section-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: var(--primary-gradient);
+            border-radius: 2px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+            margin-top: 1rem;
+        }
+
+        /* Specific styling for chart canvas to fit dark theme */
+        #systemMetricsChart, #flowStatsChart {
+            background-color: rgba(255, 255, 255, 0.05); /* Slightly visible background */
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        .chart-filter-container {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 1rem;
+        }
+
+        .chart-filter-select {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+            border: 1px solid var(--glass-border);
+            -webkit-appearance: none; /* Remove default arrow */
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1.2rem;
+        }
+
+        .event-log-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 0.75rem 1.25rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .event-log-item.info { border-left: 4px solid #00f2fe; }
+        .event-log-item.warning { border-left: 4px solid #38f9d7; }
+        .event-log-item.error { border-left: 4火车 solid #fa709a; }
+
+        .event-log-item .icon {
+            font-size: 1.2rem;
+            color: var(--text-primary);
+            flex-shrink: 0;
+            margin-top: 0.125rem;
+        }
+        .event-log-item .timestamp {
+            font-weight: 600;
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .event-log-item .type {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .event-log-item .description {
+            flex-grow: 1;
+        }
+
+        .error-message {
+            color: #fa709a;
+            background: rgba(250, 112, 154, 0.1);
+            border: 1px solid rgba(250, 112, 154, 0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .error-message i {
+            color: #fa709a;
+        }
+
+        @media (max-width: 768px) {
+            .main-title {
+                font-size: 2.5rem;
+            }
+
+            .card-header-modern {
+                font-size: 1.2rem;
+                padding: 1rem;
+            }
+
+            .topology-node {
+                font-size: 0.8rem;
+                padding: 0.5rem 1rem;
+            }
+
+            .metric-value {
+                font-size: 1.2rem;
+            }
+        }
+
+        .animate-in {
+            animation: slideInUp 0.6s ease-out;
+        }
+
+        @keyframes slideInUp {
+            from {
+                transform: translateY(30px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container my-5">
+        <h1 class="main-title">SDN Network Dashboard</h1>
+
+        <div class="row g-4">
+            <section class="col-12 col-lg-6">
+                <div class="modern-card h-100 animate-in">
+                    <div class="card-header-modern">
+                        <i class="fas fa-server"></i>
+                        Sistem Metrikleri (WSL Host)
+                    </div>
+                    <div class="card-body">
+                        <div class="metric-item">
+                            <div class="metric-label">
+                                <i class="fas fa-microchip"></i>
+                                CPU Kullanımı
+                            </div>
+                            <div class="metric-value" id="cpu_usage">
+                                <div class="loading-spinner"></div>
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">
+                                <i class="fas fa-memory"></i>
+                                Bellek Kullanımı
+                            </div>
+                            <div class="metric-value" id="memory_percent">
+                                <div class="loading-spinner"></div>
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">
+                                <i class="fas fa-hdd"></i>
+                                Disk Kullanımı
+                            </div>
+                            <div class="metric-value" id="disk_usage">
+                                <div class="loading-spinner"></div>
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">
+                                <i class="fas fa-upload"></i>
+                                Gönderilen Veri
+                            </div>
+                            <div class="metric-value" id="network_bytes_sent">
+                                <div class="loading-spinner"></div>
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">
+                                <i class="fas fa-download"></i>
+                                Alınan Veri
+                            </div>
+                            <div class="metric-value" id="network_bytes_recv">
+                                <div class="loading-spinner"></div>
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">
+                                <i class="fas fa-clock"></i>
+                                Çalışma Süresi
+                            </div>
+                            <div class="metric-value" id="uptime">
+                                <div class="loading-spinner"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="col-12 col-lg-6">
+                <div class="modern-card h-100 animate-in">
+                    <div class="card-header-modern">
+                        <i class="fas fa-chart-line"></i>
+                        Ağ Durumu
+                    </div>
+                    <div class="card-body">
+                        <div class="metric-item">
+                            <div class="metric-label">
+                                <i class="fas fa-cogs"></i>
+                                Ryu Kontrolcü Durumu
+                            </div>
+                            <div class="metric-value" id="ryu_status">
+                                <div class="loading-spinner"></div>
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">
+                                <i class="fas fa-heartbeat"></i>
+                                Ağ Sağlık Skoru
+                            </div>
+                            <div class="metric-value" id="network_health">
+                                <div class="loading-spinner"></div>
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">
+                                <i class="fas fa-ethernet"></i>
+                                Toplam Anahtar
+                            </div>
+                            <div class="metric-value" id="total_switches">
+                                <div class="loading-spinner"></div>
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">
+                                <i class="fas fa-random"></i>
+                                Toplam Akış
+                            </div>
+                            <div class="metric-value" id="total_flows">
+                                <div class="loading-spinner"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="row g-4 mt-2">
+            <section class="col-12 col-lg-6">
+                <div class="modern-card h-100 animate-in">
+                    <div class="card-header-modern">
+                        <i class="fas fa-project-diagram"></i>
+                        Ağ Topolojisi
+                    </div>
+                    <div class="card-body">
+                        <div class="section-title">
+                            <i class="fas fa-desktop"></i>
+                            Ana Bilgisayarlar
+                        </div>
+                        <div id="topology_hosts" class="mb-4">
+                            <div class="loading-spinner"></div>
+                        </div>
+
+                        <div class="section-title">
+                            <i class="fas fa-network-wired"></i>
+                            Anahtarlar
+                        </div>
+                        <div id="topology_switches_nodes" class="mb-4">
+                            <div class="loading-spinner"></div>
+                        </div>
+
+                        <div class="section-title">
+                            <i class="fas fa-link"></i>
+                            Bağlantılar
+                        </div>
+                        <div id="topology_links" class="mb-3">
+                            <div class="loading-spinner"></div>
+                        </div>
+
+                        <p class="text-muted small fst-italic mt-3" style="color: var(--text-secondary) !important;">
+                            <i class="fas fa-info-circle"></i>
+                            Bu topoloji Mininet'in <code>network.py</code> dosyasındaki yapıya dayanmaktadır.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="col-12 col-lg-6">
+                <div class="modern-card h-100 animate-in">
+                    <div class="card-header-modern">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Ağ Olayları
+                    </div>
+                    <div class="card-body">
+                        <div id="network_events_log" class="h-100 overflow-auto" style="max-height: 500px;">
+                            <p class="text-muted text-center mt-3">Olaylar buraya gelecek...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="row g-4 mt-2">
+            <section class="col-12">
+                <div class="modern-card animate-in">
+                    <div class="card-header-modern">
+                        <i class="fas fa-cogs"></i>
+                        Ryu Kontrolcü Metrikleri
+                    </div>
+                    <div class="card-body">
+                        <div class="section-title">
+                            <i class="fas fa-sitemap"></i>
+                            Bağlı Anahtarlar
+                        </div>
+                        <div id="ryu_switches_info" class="mb-4">
+                            <div class="loading-spinner"></div>
+                        </div>
+
+                        <div class="section-title">
+                            <i class="fas fa-stream"></i>
+                            Akış Tablosu İstatistikleri
+                        </div>
+                        <div id="ryu_flow_stats" class="mb-4">
+                            <div class="loading-spinner"></div>
+                        </div>
+
+                        <div class="section-title">
+                            <i class="fas fa-plug"></i>
+                            Port İstatistikleri
+                        </div>
+                        <div id="ryu_port_stats">
+                            <div class="loading-spinner"></div>
+                        </div>
+
+                        <p class="text-muted small fst-italic mt-4" style="color: var(--text-secondary) !important;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Mininet ağı çalışmıyorsa Ryu metrikleri boş olabilir.
+                        </p>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="row g-4 mt-2">
+            <section class="col-12 col-lg-6">
+                <div class="modern-card h-100 animate-in">
+                    <div class="card-header-modern">
+                        <i class="fas fa-chart-area"></i>
+                        Sistem Metrikleri Geçmişi
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="systemMetricsChart"></canvas>
+                        </div>
+                        <div class="chart-filter-container">
+                            <select id="system-history-filter" class="chart-filter-select">
+                                <option value="1">Son 1 Saat</option>
+                                <option value="6">Son 6 Saat</option>
+                                <option value="24" selected>Son 24 Saat</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="col-12 col-lg-6">
+                <div class="modern-card h-100 animate-in">
+                    <div class="card-header-modern">
+                        <i class="fas fa-chart-bar"></i>
+                        Akış İstatistikleri Geçmişi (Toplam Akış)
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="flowStatsChart"></canvas>
+                        </div>
+                        <div class="chart-filter-container">
+                            <select id="flow-history-filter" class="chart-filter-select">
+                                <option value="1">Son 1 Saat</option>
+                                <option value="6">Son 6 Saat</option>
+                                <option value="24" selected>Son 24 Saat</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        // Socket.IO connection
+        const socket = io();
+
+        // Chart instances
+        let systemMetricsChart;
+        let flowStatsChart;
+
+        // Get computed styles for CSS variables
+        const style = getComputedStyle(document.body);
+        const textSecondaryColor = style.getPropertyValue('--text-secondary').trim();
+        const textPrimaryColor = style.getPropertyValue('--text-primary').trim();
+        const glassBorderColor = style.getPropertyValue('--glass-border').trim();
+        const darkBgColor = style.getPropertyValue('--dark-bg').trim();
+
+
+        // --- Utility Functions ---
+
+        /**
+         * Formats byte values into human-readable strings (e.g., KB, MB, GB).
+         * @param {number} bytes - The number of bytes.
+         * @returns {string} Formatted string with unit.
+         */
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        /**
+         * Formats uptime in seconds into a human-readable string (e.g., "5d 12h 30m").
+         * @param {number} seconds - The uptime in seconds.
+         * @returns {string} Formatted uptime string.
+         */
+        function formatUptime(seconds) {
+            if (seconds === undefined || seconds === null) return '--';
+            const d = Math.floor(seconds / (3600 * 24));
+            seconds %= (3600 * 24);
+            const h = Math.floor(seconds / 3600);
+            seconds %= 3600;
+            const m = Math.floor(seconds / 60);
+            return `${d}d ${h}h ${m}m`;
+        }
+
+        /**
+         * Appends a new event entry to the network events log.
+         * @param {string} eventType - The type of the event.
+         * @param {string} dpid - The DPID associated with the event (can be empty).
+         * @param {string} description - A description of the event.
+         * @param {string} severity - The severity of the event ('info', 'warning', 'error').
+         * @param {string} [timestamp=new Date().toISOString()] - ISO string of the event timestamp.
+         */
+        function appendEvent(eventType, dpid, description, severity, timestamp = new Date().toISOString()) {
+            const eventsLog = document.getElementById('network_events_log');
+            if (!eventsLog) {
+                console.error('Network events log element not found.');
+                return;
+            }
+
+            const eventElement = document.createElement('div');
+            eventElement.classList.add('event-log-item', severity); // Add severity class for styling
+
+            let iconClass = '';
+            switch (severity) {
+                case 'error': iconClass = 'fas fa-times-circle'; break;
+                case 'warning': iconClass = 'fas fa-exclamation-triangle'; break;
+                case 'info': default: iconClass = 'fas fa-info-circle'; break;
+            }
+
+            const time = new Date(timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const dpidText = dpid ? `(DPID: ${dpid})` : '';
+
+            eventElement.innerHTML = `
+                <i class="icon ${iconClass}"></i>
+                <span class="timestamp">[${time}]</span>
+                <span class="type">${eventType.toUpperCase()}</span> ${dpidText}: <span class="description">${description}</span>
+            `;
+
+            // Prepend to show newest events at the top
+            if (eventsLog.firstChild && eventsLog.firstChild.tagName === 'P' && eventsLog.firstChild.textContent.includes('Olaylar buraya gelecek')) {
+                eventsLog.innerHTML = ''; // Clear placeholder if it exists
+            }
+            eventsLog.prepend(eventElement);
+
+            // Limit the number of displayed events to avoid performance issues
+            while (eventsLog.children.length > 50) {
+                eventsLog.removeChild(eventsLog.lastChild);
+            }
+        }
+
+        // --- Data Fetching Functions ---
+
+        /**
+         * Fetches and updates system metrics (CPU, Memory, Disk, Network I/O, Uptime).
+         */
+        async function fetchSystemMetrics() {
+            try {
+                const response = await fetch('/api/system_metrics');
+                const data = await response.json();
+
+                if (data.error) {
+                    console.error('Error fetching system metrics:', data.error);
+                    document.getElementById('cpu_usage').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Hata!</span>';
+                    document.getElementById('memory_percent').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Hata!</span>';
+                    document.getElementById('disk_usage').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Hata!</span>';
+                    document.getElementById('network_bytes_sent').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Hata!</span>';
+                    document.getElementById('network_bytes_recv').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Hata!</span>';
+                    document.getElementById('uptime').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Hata!</span>';
+                    return;
+                }
+
+                document.getElementById('cpu_usage').innerHTML = `${data.cpu_usage.toFixed(1)}<span style="font-size: 0.8em;">%</span>`;
+                document.getElementById('memory_percent').innerHTML = `${data.memory_percent.toFixed(1)}<span style="font-size: 0.8em;">%</span>`;
+                document.getElementById('disk_usage').innerHTML = `${data.disk_usage.toFixed(1)}<span style="font-size: 0.8em;">%</span>`;
+                document.getElementById('network_bytes_sent').innerHTML = `${formatBytes(data.network_bytes_sent)}`;
+                document.getElementById('network_bytes_recv').innerHTML = `${formatBytes(data.network_bytes_recv)}`;
+                document.getElementById('uptime').innerHTML = formatUptime(data.uptime);
+
+                if (data.anomalies && data.anomalies.length > 0) {
+                    data.anomalies.forEach(anomaly => {
+                        appendEvent('Anomali', '', anomaly.description, 'warning');
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to fetch system metrics:', error);
+                 document.getElementById('cpu_usage').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Yüklenemedi</span>';
+                document.getElementById('memory_percent').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Yüklenemedi</span>';
+                document.getElementById('disk_usage').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Yüklenemedi</span>';
+                document.getElementById('network_bytes_sent').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Yüklenemedi</span>';
+                document.getElementById('network_bytes_recv').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Yüklenemedi</span>';
+                document.getElementById('uptime').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Yüklenemedi</span>';
+            }
+        }
+
+        /**
+         * Fetches and updates network topology information.
+         */
+        async function fetchTopology() {
+            try {
+                const response = await fetch('/api/topology');
+                const data = await response.json();
+
+                if (data.error) {
+                    console.error('Error fetching topology:', data.error);
+                    document.getElementById('topology_hosts').innerHTML = '<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Topoloji verisi alınamadı</div>';
+                    document.getElementById('topology_switches_nodes').innerHTML = ''; // Clear to indicate error
+                    document.getElementById('topology_links').innerHTML = ''; // Clear to indicate error
+                    return;
+                }
+
+                // Update Hosts
+                const hostContainer = document.getElementById('topology_hosts');
+                hostContainer.innerHTML = '';
+                data.hosts.forEach((host, index) => {
+                    // Staggered animation for better visual effect
+                    setTimeout(() => {
+                        const span = document.createElement('span');
+                        span.className = 'topology-node client-node animate-in';
+                        span.innerHTML = `<i class="fas fa-desktop"></i> ${host.name} (${host.ip})`;
+                        hostContainer.appendChild(span);
+                    }, index * 100);
+                });
+
+                // Update Switches
+                const switchNodesContainer = document.getElementById('topology_switches_nodes');
+                switchNodesContainer.innerHTML = '';
+                data.switches.forEach((sw, index) => {
+                    setTimeout(() => {
+                        const span = document.createElement('span');
+                        span.className = `topology-node switch-node animate-in ${sw.status === 'active' ? '' : 'status-disconnected'}`; // Add status class for switches
+                        span.innerHTML = `<i class="fas fa-network-wired"></i> ${sw.name} <span class="badge ${sw.status === 'active' ? 'bg-success' : 'bg-danger'}">${sw.status === 'active' ? 'Aktif' : 'Pasif'}</span>`;
+                        switchNodesContainer.appendChild(span);
+                    }, index * 100);
+                });
+
+                // Update Links
+                const linkContainer = document.getElementById('topology_links');
+                linkContainer.innerHTML = '';
+                data.links.forEach((link, index) => {
+                    setTimeout(() => {
+                        const div = document.createElement('div');
+                        div.className = 'connection-item animate-in';
+                        div.innerHTML = `
+                            <span style="color: ${textPrimaryColor}; font-weight: 600;">${link.from}</span>
+                            <div class="connection-line"></div>
+                            <span style="color: ${textPrimaryColor}; font-weight: 600;">${link.to}</span>
+                            <span class="text-muted small ms-auto" style="color: ${textSecondaryColor} !important;">${link.bandwidth}, ${link.latency}</span>
+                        `;
+                        linkContainer.appendChild(div);
+                    }, index * 150);
+                });
+
+            } catch (error) {
+                console.error('Failed to fetch topology:', error);
+                document.getElementById('topology_hosts').innerHTML = '<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Topoloji yüklenemedi</div>';
+                document.getElementById('topology_switches_nodes').innerHTML = '';
+                document.getElementById('topology_links').innerHTML = '';
+            }
+        }
+
+        /**
+         * Fetches and updates Ryu Controller metrics (switches, flows, ports).
+         */
+        async function fetchRyuMetrics() {
+            try {
+                const response = await fetch('/api/ryu_metrics');
+                const data = await response.json();
+
+                const ryuStatusElem = document.getElementById('ryu_status');
+                const networkHealthElem = document.getElementById('network_health');
+                const totalSwitchesElem = document.getElementById('total_switches');
+                const totalFlowsElem = document.getElementById('total_flows');
+
+                const switchesInfoDiv = document.getElementById('ryu_switches_info');
+                const flowStatsDiv = document.getElementById('ryu_flow_stats');
+                const portStatsDiv = document.getElementById('ryu_port_stats');
+
+                switchesInfoDiv.innerHTML = ''; // Clear previous data
+                flowStatsDiv.innerHTML = '';
+                portStatsDiv.innerHTML = '';
+
+                if (data.error) {
+                    ryuStatusElem.innerHTML = '<span class="error-message"><i class="fas fa-times-circle"></i> Bağlantı Yok</span>';
+                    networkHealthElem.innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Hata</span>';
+                    totalSwitchesElem.innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Hata</span>';
+                    totalFlowsElem.innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Hata</span>';
+                    switchesInfoDiv.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                    flowStatsDiv.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Akış istatistikleri alınamadı.</div>`;
+                    portStatsDiv.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Port istatistikleri alınamadı.</div>`;
+                    appendEvent('RYU_HATA', '', data.error, 'error');
+                    return;
+                }
+
+                ryuStatusElem.innerHTML = '<span class="status-indicator"></span> Bağlı';
+                networkHealthElem.innerHTML = `${data.topology_summary.network_health.toFixed(0)}<span style="font-size: 0.8em;">%</span>`;
+                totalSwitchesElem.innerHTML = data.performance_metrics.total_switches;
+                totalFlowsElem.innerHTML = data.performance_metrics.total_flows;
+
+                // Connected Switches Details
+                if (data.switches && data.switches.length > 0) {
+                    data.switches.forEach((s) => {
+                        const switchDiv = document.createElement('div');
+                        switchDiv.className = 'flow-entry animate-in'; // Using flow-entry for general data display
+                        const statusClass = s.status === 'connected' ? '' : 'red';
+                        switchDiv.innerHTML = `
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                                <div class="status-indicator ${statusClass}"></div>
+                                <strong>DPID:</strong> <span class="dpid-status">${s.dpid}</span> (${s.status === 'connected' ? 'Bağlı' : 'Bağlantı Yok'})
+                            </div>
+                            <p>Toplam Akış: <strong>${s.flow_count}</strong>, Toplam Paket: <strong>${s.total_packets}</strong>, Toplam Bayt: <strong>${formatBytes(s.total_bytes)}</strong></p>
+                        `;
+
+                        if (s.ports && s.ports.length > 0) {
+                            const portsDiv = document.createElement('div');
+                            portsDiv.innerHTML = `<strong style="color: ${textPrimaryColor}; margin-top: 1rem; display: block;">Portlar:</strong>`;
+                            s.ports.forEach((port) => {
+                                const portDiv = document.createElement('div');
+                                portDiv.style.marginLeft = '1rem';
+                                portDiv.style.marginTop = '0.5rem';
+                                portDiv.style.color = textSecondaryColor;
+                                portDiv.innerHTML = `<i class="fas fa-plug"></i> Port ${port.port_no}: ${port.name || 'N/A'} (${port.hw_addr || 'N/A'})`;
+                                portsDiv.appendChild(portDiv);
+                            });
+                            switchDiv.appendChild(portsDiv);
+                        }
+                        switchesInfoDiv.appendChild(switchDiv);
+                    });
+                } else {
+                    switchesInfoDiv.innerHTML = `
+                        <div class="flow-entry" style="text-align: center; opacity: 0.7;">
+                            <i class="fas fa-search" style="font-size: 2rem; margin-bottom: 1rem; color: ${textSecondaryColor};"></i>
+                            <p>Henüz bağlı anahtar bulunamadı.</p>
+                        </div>
+                    `;
+                }
+
+                // Flow Statistics
+                let flowStatsHtml = '';
+                if (Object.keys(data.flow_stats).length > 0) {
+                    for (const dpid in data.flow_stats) {
+                        flowStatsHtml += `<h6 style="color: ${textPrimaryColor}; margin-top: 1.5rem;"><i class="fas fa-stream"></i> DPID ${dpid} Akışları:</h6>`;
+                        if (data.flow_stats[dpid].length > 0) {
+                            data.flow_stats[dpid].forEach((flow) => {
+                                flowStatsHtml += `<div class="flow-entry animate-in">
+                                    <div style="margin-bottom: 0.5rem;"><strong>Match:</strong> ${JSON.stringify(flow.match)}</div>
+                                    <div style="margin-bottom: 0.5rem;"><strong>Actions:</strong> ${JSON.stringify(flow.instructions)}</div>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 2rem;">
+                                        <span><strong>Paketler:</strong> <span class="metric-value" style="font-size: 1rem;">${flow.packet_count}</span></span>
+                                        <span><strong>Bayt:</strong> <span class="metric-value" style="font-size: 1rem;">${formatBytes(flow.byte_count)}</span></span>
+                                    </div>
+                                </div>`;
+                            });
+                        } else {
+                            flowStatsHtml += '<div class="flow-entry" style="opacity: 0.7;"><i class="fas fa-info-circle"></i> Bu anahtarda akış girişi bulunamadı.</div>';
+                        }
+                    }
+                } else {
+                    flowStatsHtml = '<div class="flow-entry" style="opacity: 0.7;"><i class="fas fa-info-circle"></i> Akış istatistikleri bulunamadı.</div>';
+                }
+                flowStatsDiv.innerHTML = flowStatsHtml;
+
+                // Port Statistics
+                let portStatsHtml = '';
+                if (Object.keys(data.port_stats).length > 0) {
+                    for (const dpid in data.port_stats) {
+                        portStatsHtml += `<h6 style="color: ${textPrimaryColor}; margin-top: 1.5rem;"><i class="fas fa-plug"></i> DPID ${dpid} Portları:</h6>`;
+                        if (data.port_stats[dpid].length > 0) {
+                            data.port_stats[dpid].forEach((port) => {
+                                const errorClass = (port.rx_errors > 0 || port.tx_errors > 0) ? 'text-danger' : '';
+                                portStatsHtml += `<div class="port-entry animate-in">
+                                    <div style="margin-bottom: 0.5rem;"><strong>Port:</strong> ${port.port_no} (${port.name || 'N/A'})</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                                        <div><strong>RX Paketler:</strong> <span class="metric-value ${errorClass}" style="font-size: 1rem;">${port.rx_packets}</span></div>
+                                        <div><strong>TX Paketler:</strong> <span class="metric-value ${errorClass}" style="font-size: 1rem;">${port.tx_packets}</span></div>
+                                        <div><strong>RX Bayt:</strong> <span class="metric-value ${errorClass}" style="font-size: 1rem;">${formatBytes(port.rx_bytes)}</span></div>
+                                        <div><strong>TX Bayt:</strong> <span class="metric-value ${errorClass}" style="font-size: 1rem;">${formatBytes(port.tx_bytes)}</span></div>
+                                        <div><strong>RX Hata:</strong> <span class="metric-value ${errorClass}" style="font-size: 1rem;">${port.rx_errors}</span></div>
+                                        <div><strong>TX Hata:</strong> <span class="metric-value ${errorClass}" style="font-size: 1rem;">${port.tx_errors}</span></div>
+                                    </div>
+                                </div>`;
+                                if (port.rx_errors > 0 || port.tx_errors > 0) {
+                                    appendEvent('PORT_HATA', dpid, `Port ${port.port_no} hatalar içeriyor. RX: ${port.rx_errors}, TX: ${port.tx_errors}`, 'warning');
+                                }
+                            });
+                        } else {
+                            portStatsHtml += '<div class="flow-entry" style="opacity: 0.7;"><i class="fas fa-info-circle"></i> Bu anahtarda port istatistiği bulunamadı.</div>';
+                        }
+                    }
+                } else {
+                    portStatsHtml = '<div class="flow-entry" style="opacity: 0.7;"><i class="fas fa-info-circle"></i> Port istatistikleri bulunamadı.</div>';
+                }
+                portStatsDiv.innerHTML = portStatsHtml;
+
+                // Append alerts from Ryu metrics to the event log
+                if (data.alerts && data.alerts.length > 0) {
+                    data.alerts.forEach(alert => {
+                        appendEvent('RYU_UYARI', alert.dpid, alert.description, 'warning');
+                    });
+                }
+
+            } catch (error) {
+                console.error('Failed to fetch Ryu metrics:', error);
+                document.getElementById('ryu_status').innerHTML = '<span class="error-message"><i class="fas fa-times-circle"></i> Yüklenemedi</span>';
+                document.getElementById('network_health').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Yüklenemedi</span>';
+                document.getElementById('total_switches').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Yüklenemedi</span>';
+                document.getElementById('total_flows').innerHTML = '<span class="error-message"><i class="fas fa-exclamation-triangle"></i> Yüklenemedi</span>';
+                document.getElementById('ryu_switches_info').innerHTML = '<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Ryu metrikleri yüklenemedi</div>';
+                document.getElementById('ryu_flow_stats').innerHTML = '<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Akış istatistikleri yüklenemedi</div>';
+                document.getElementById('ryu_port_stats').innerHTML = '<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Port istatistikleri yüklenemedi</div>';
+            }
+        }
+
+        /**
+         * Fetches historical data from the backend for charting.
+         * @param {'system'|'flows'} type - The type of historical data to fetch.
+         * @param {number} hours - The number of past hours to retrieve data for.
+         */
+        async function fetchHistoricalData(type, hours) {
+            try {
+                const response = await fetch(`/api/historical_data?type=${type}&hours=${hours}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    console.error(`Error fetching historical ${type} data:`, data.error);
+                    // Display error on chart canvas if possible or in its container
+                    return;
+                }
+
+                if (type === 'system') {
+                    updateSystemMetricsChart(data);
+                } else if (type === 'flows') {
+                    updateFlowStatsChart(data);
+                }
+            } catch (error) {
+                console.error(`Failed to fetch historical ${type} data:`, error);
+            }
+        }
+
+        /**
+         * Initializes the System Metrics Chart using Chart.js.
+         */
+        function initSystemMetricsChart() {
+            const ctx = document.getElementById('systemMetricsChart');
+            if (!ctx) {
+                console.warn('System Metrics Chart canvas not found. Skipping initialization.');
+                return;
+            }
+
+            systemMetricsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'CPU Kullanımı (%)',
+                            data: [],
+                            borderColor: '#4facfe', /* Success gradient start */
+                            backgroundColor: 'rgba(79, 172, 254, 0.2)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Bellek Kullanımı (%)',
+                            data: [],
+                            borderColor: '#00f2fe', /* Success gradient end */
+                            backgroundColor: 'rgba(0, 242, 254, 0.2)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Disk Kullanımı (%)',
+                            data: [],
+                            borderColor: '#43e97b', /* Warning gradient start */
+                            backgroundColor: 'rgba(67, 233, 123, 0.2)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeInOutQuad'
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'hour',
+                                tooltipFormat: 'MMM d, HH:mm:ss',
+                                displayFormats: {
+                                    hour: 'MMM d, HH:mm'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Zaman',
+                                color: textSecondaryColor
+                            },
+                            ticks: { color: textSecondaryColor },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Yüzde (%)',
+                                color: textSecondaryColor
+                            },
+                            ticks: { color: textSecondaryColor },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: darkBgColor,
+                            titleColor: textPrimaryColor,
+                            bodyColor: textSecondaryColor,
+                            borderColor: glassBorderColor,
+                            borderWidth: 1,
+                            cornerRadius: 8
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                color: textPrimaryColor
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        /**
+         * Updates the System Metrics Chart with new data.
+         * @param {object} data - The fetched historical system metrics data.
+         */
+        function updateSystemMetricsChart(data) {
+            if (systemMetricsChart) {
+                systemMetricsChart.data.labels = data.timestamps.map(ts => new Date(ts));
+                systemMetricsChart.data.datasets[0].data = data.cpu_usage;
+                systemMetricsChart.data.datasets[1].data = data.memory_percent;
+                systemMetricsChart.data.datasets[2].data = data.disk_usage;
+                systemMetricsChart.update();
+            }
+        }
+
+        /**
+         * Initializes the Flow Statistics Chart using Chart.js.
+         */
+        function initFlowStatsChart() {
+            const ctx = document.getElementById('flowStatsChart');
+            if (!ctx) {
+                console.warn('Flow Stats Chart canvas not found. Skipping initialization.');
+                return;
+            }
+
+            flowStatsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [] // Datasets will be dynamically added for each DPID
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeInOutQuad'
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'hour',
+                                tooltipFormat: 'MMM d, HH:mm:ss',
+                                displayFormats: {
+                                    hour: 'MMM d, HH:mm'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Zaman',
+                                color: textSecondaryColor
+                            },
+                            ticks: { color: textSecondaryColor },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Akış Sayısı',
+                                color: textSecondaryColor
+                            },
+                            ticks: { color: textSecondaryColor },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: darkBgColor,
+                            titleColor: textPrimaryColor,
+                            bodyColor: textSecondaryColor,
+                            borderColor: glassBorderColor,
+                            borderWidth: 1,
+                            cornerRadius: 8
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                color: textPrimaryColor
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        /**
+         * Updates the Flow Statistics Chart with new data.
+         * @param {object} data - The fetched historical flow statistics data (grouped by DPID).
+         */
+        function updateFlowStatsChart(data) {
+            if (flowStatsChart) {
+                const datasets = [];
+                const allTimestamps = new Set();
+                const colors = [
+                    '#f093fb', '#f5576c', '#667eea', '#764ba2', '#fa709a', '#fee140',
+                    '#4facfe', '#00f2fe', '#43e97b', '#38f9d7'
+                ];
+                let colorIndex = 0;
+
+                for (const dpid in data) {
+                    const dpidData = data[dpid];
+                    dpidData.forEach(item => allTimestamps.add(new Date(item.timestamp).getTime()));
+
+                    datasets.push({
+                        label: `Akışlar (DPID: ${dpid})`,
+                        data: dpidData.map(item => ({ x: new Date(item.timestamp), y: item.flow_count })),
+                        borderColor: colors[colorIndex % colors.length],
+                        backgroundColor: colors[colorIndex % colors.length] + '33', // Add transparency for fill
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 0
+                    });
+                    colorIndex++;
+                }
+
+                // Sort all timestamps to ensure a consistent x-axis across all datasets
+                const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => a - b).map(ts => new Date(ts));
+
+                flowStatsChart.data.labels = sortedTimestamps;
+                flowStatsChart.data.datasets = datasets;
+                flowStatsChart.update();
+            }
+        }
+
+        // --- Event Listeners and Initial Load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize charts
+            initSystemMetricsChart();
+            initFlowStatsChart();
+
+            // Initial data fetches with staggered animations
+            setTimeout(fetchSystemMetrics, 100);
+            setTimeout(fetchTopology, 300);
+            setTimeout(fetchRyuMetrics, 500);
+            
+            // Initial historical data fetch (default to 24 hours)
+            setTimeout(() => fetchHistoricalData('system', 24), 700);
+            setTimeout(() => fetchHistoricalData('flows', 24), 900);
+            
+            // Set up periodic fetches for real-time data
+            setInterval(fetchSystemMetrics, 3000);  // Every 3 seconds
+            setInterval(fetchRyuMetrics, 5000);     // Every 5 seconds
+            setInterval(fetchTopology, 10000);      // Every 10 seconds
+
+            // History filter event listeners
+            document.getElementById('system-history-filter').addEventListener('change', (event) => {
+                const hours = event.target.value;
+                fetchHistoricalData('system', hours);
+            });
+
+            document.getElementById('flow-history-filter').addEventListener('change', (event) => {
+                const hours = event.target.value;
+                fetchHistoricalData('flows', hours);
+            });
+
+            // Add entrance animations to cards
+            const cards = document.querySelectorAll('.modern-card');
+            cards.forEach((card, index) => {
+                card.style.animationDelay = `${index * 0.2}s`;
+            });
+        });
+
+        // --- Socket.IO Event Handlers ---
+        socket.on('connect', () => {
+            console.log('Socket.IO Connected!');
+            appendEvent('Soket Durumu', '', 'Pano gerçek zamanlı güncellemelerine bağlandı.', 'info');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Socket.IO Disconnected!');
+            appendEvent('Soket Durumu', '', 'Pano gerçek zamanlı güncellemelerinden bağlantı kesildi.', 'error');
+        });
+
+        socket.on('network_event', (event) => {
+            console.log('Received network event:', event);
+            appendEvent(event.event_type, event.dpid, event.description, event.severity, event.timestamp);
+        });
+
+        // --- Interactive particle background effect ---
+        function createParticle() {
+            const particle = document.createElement('div');
+            particle.style.position = 'fixed';
+            particle.style.width = '4px';
+            particle.style.height = '4px';
+            particle.style.background = 'rgba(102, 126, 234, 0.6)';
+            particle.style.borderRadius = '50%';
+            particle.style.pointerEvents = 'none';
+            particle.style.zIndex = '-1';
+            particle.style.left = Math.random() * window.innerWidth + 'px';
+            particle.style.top = window.innerHeight + 'px';
+            particle.style.boxShadow = '0 0 10px rgba(102, 126, 234, 0.8)';
+            
+            document.body.appendChild(particle);
+            
+            const animation = particle.animate([
+                { transform: 'translateY(0px) rotate(0deg)', opacity: 0 },
+                { transform: 'translateY(-20px) rotate(180deg)', opacity: 1 },
+                { transform: `translateY(-${window.innerHeight + 100}px) rotate(360deg)`, opacity: 0 }
+            ], {
+                duration: Math.random() * 10000 + 15000,
+                easing: 'linear'
+            });
+            
+            animation.onfinish = () => {
+                particle.remove();
+            };
+        }
+
+        // Create floating particles
+        setInterval(createParticle, 2000);
+        
+        // Removed mouse interaction effects (3D card tilt) as per user request.
+        /*
+        document.addEventListener('mousemove', (e) => {
+            const cards = document.querySelectorAll('.modern-card');
+            cards.forEach(card => {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                if (x >= 0 && x <= rect.width && y >= 0 && y <= rect.height) {
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+                    const rotateX = (y - centerY) / 20; // Adjust divisor for less/more tilt
+                    const rotateY = (centerX - x) / 20; // Adjust divisor for less/more tilt
+                    
+                    card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(10px)`;
+                } else {
+                    card.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateZ(0px)';
+                }
+            });
+        });
+        */
+    </script>
+</body>
+</html>
